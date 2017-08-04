@@ -28,12 +28,22 @@ class Command(papis.commands.Command):
             action="store_true"
         )
 
+        self.parser.add_argument(
+            "--toga",
+            help="Toga based UI",
+            action="store_true"
+        )
+
     def fetch_documents(self):
         return papis.utils.get_documents_in_lib(self.args.lib)
 
     def rofi_main(self):
         import papis.gui.rofi
         return papis.gui.rofi.Gui().main(self.documents)
+
+    def toga_main(self):
+        import papis.gui.toga
+        return papis.gui.toga.Gui().main(self.documents)
 
     def tk_main(self):
         import papis.gui.tk
@@ -51,5 +61,7 @@ class Command(papis.commands.Command):
             return self.vim_main()
         if self.args.rofi:
             return self.rofi_main()
+        if self.args.toga:
+            return self.toga_main()
         default = papis.config.get("default-gui")
         return exec("self.%s_main()" % default)
