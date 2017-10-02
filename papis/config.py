@@ -5,7 +5,7 @@ logger.debug("importing")
 
 import os
 import configparser
-import papis.utils
+import papis.exceptions
 
 
 CONFIGURATION = None #: Global configuration object variable.
@@ -25,16 +25,25 @@ general_settings = {
     "browser"         : "xdg-open",
     "picktool"        : "papis.pick",
     "mvtool"          : "mv",
-    "editor"          : "xdg-open",
+    "editor"          : os.environ.get('EDITOR')
+                        or os.environ.get('VISUAL')
+                        or 'xdg-open',
     "xeditor"         : "xdg-open",
     "sync-command"    : "git -C $dir pull origin master",
     "notes-name"      : "notes.tex",
     "format-doc-name" : "doc",
     "use-cache"       : True,
+    "cache-dir"       : \
+        os.path.join(os.environ.get('XDG_CACHE_HOME'), 'papis') if
+        os.environ.get('XDG_CACHE_HOME') else \
+        os.path.join(os.path.expanduser('~'), '.cache', 'papis'),
+    "use-git"         : False,
     "add-confirm"     : False,
+    "add-name"        : "",
     "add-interactive" : False,
     "add-edit"        : False,
     "add-open"        : False,
+    "check-keys"      : 'files',
     "browse-query-format"   : "{doc[title]} {doc[author]}",
     "search-engine"   : "https://duckduckgo.com",
     "user-agent"      : \
@@ -61,6 +70,8 @@ def get_general_settings_name():
     """Get the section name of the general settings
     :returns: Section's name
     :rtype:  str
+    >>> get_general_settings_name()
+    'settings'
     """
     return "settings"
 
@@ -79,6 +90,14 @@ def get_default_settings(section="", key=""):
     :type  section: str
     :param key: Setting's name to be queried for.
     :type  key: str
+
+    >>> import collections
+    >>> type(get_default_settings()) is collections.OrderedDict
+    True
+    >>> get_default_settings(key='mvtool')
+    'mv'
+    >>> get_default_settings(key='help-key', section='vim-gui')
+    'h'
     """
     global DEFAULT_SETTINGS
     import papis.gui
@@ -101,13 +120,46 @@ def get_default_settings(section="", key=""):
         return DEFAULT_SETTINGS[section][key]
 
 
+def get_config_home():
+    """Returns the base directory relative to which user specific configuration
+    files should be stored.
+
+    :returns: Configuration base directory
+    :rtype:  str
+    """
+    return os.environ.get('XDG_CONFIG_HOME') or \
+        os.path.join(os.path.expanduser('~'), '.config')
+
+
+def get_config_dirs():
+    dirs = []
+    if os.environ.get('XDG_CONFIG_DIRS'):
+        # get_config_home should also be included on top of XDG_CONFIG_DIRS
+        dirs += [
+            os.path.join(d, 'papis') for d in
+            os.environ.get('XDG_CONFIG_DIRS').split(':')
+        ]
+    # Take XDG_CONFIG_HOME and $HOME/.papis for backwards
+    # compatibility
+    dirs += [
+        os.path.join(get_config_home(), 'papis'),
+        os.path.join(os.path.expanduser('~'), '.papis')
+    ]
+    return dirs
+
+
 def get_config_folder():
     """Get folder where the configuration files are stored,
-    e.g. /home/user/.papis
+    e.g. ``/home/user/.papis``. It is XDG compatible, which means that if the
+    environment variable ``XDG_CONFIG_HOME`` is defined it will use the
+    configuration folder ``XDG_CONFIG_HOME/papis`` instead.
     """
-    return os.path.join(
-        os.path.expanduser("~"), ".papis"
-    )
+    config_dirs = get_config_dirs()
+    for config_dir in config_dirs:
+        if os.path.exists(config_dir):
+            return config_dir
+    # If no folder is found, then get the config home
+    return os.path.join(get_config_home(), 'papis')
 
 
 def get_config_file():
@@ -146,6 +198,9 @@ def get_scripts_folder():
 def set(key, val, section=None):
     """Set a key to val in some section and make these changes available
     everywhere.
+    >>> set('picktool', 'rofi')
+    >>> get('picktool')
+    'rofi'
     """
     config = get_configuration()
     if not config.has_section(section or "settings"):
@@ -169,7 +224,7 @@ def general_get(key, section=None, data_type=None):
     method = None
     value = None
     config = get_configuration()
-    lib = papis.utils.get_lib()
+    lib = get_lib()
     global_section = get_general_settings_name()
     specialized_key = section + "-" + key if section is not None else key
     extras = [(section, key)] if section is not None else []
@@ -218,18 +273,27 @@ def get(*args, **kwargs):
 
 def getint(*args, **kwargs):
     """Integer getter
+    >>> set('something', 42)
+    >>> getint('something')
+    42
     """
     return general_get(*args, data_type=int, **kwargs)
 
 
 def getfloat(*args, **kwargs):
     """Float getter
+    >>> set('something', 0.42)
+    >>> getfloat('something')
+    0.42
     """
     return general_get(*args, data_type=float, **kwargs)
 
 
 def getboolean(*args, **kwargs):
     """Bool getter
+    >>> set('add-open', True)
+    >>> getboolean('add-open')
+    True
     """
     return general_get(*args, data_type=bool, **kwargs)
 
@@ -261,6 +325,30 @@ def get_configuration():
         logger.debug("Creating configuration")
         CONFIGURATION = Configuration()
     return CONFIGURATION
+
+
+def get_lib():
+    """Get current library, it either retrieves the library from
+    the environment PAPIS_LIB variable or from the command line
+    args passed by the user.
+
+    :param library: Name of library or path to a given library
+    :type  library: str
+    >>> papis.api.set_lib('hello-world')
+    >>> get_lib()
+    'hello-world'
+    """
+    import papis.commands
+    try:
+        lib = papis.commands.get_args().lib
+    except AttributeError:
+        try:
+            lib = os.environ["PAPIS_LIB"]
+        except KeyError:
+            # Do not put papis.config.get because get is a special function
+            # that also needs the library to see if some key was overriden!
+            lib = papis.config.get_default_settings(key="default-library")
+    return lib
 
 
 def reset_configuration():
@@ -305,6 +393,9 @@ class Configuration(configparser.ConfigParser):
 
     def initialize(self):
         if not os.path.exists(self.dir_location):
+            self.logger.warning(
+                'Creating configuration folder in %s' % self.dir_location
+            )
             os.makedirs(self.dir_location)
         if not os.path.exists(self.scripts_location):
             os.makedirs(self.scripts_location)

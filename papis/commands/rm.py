@@ -2,6 +2,7 @@ import papis
 import sys
 import os
 import shutil
+import papis.api
 import papis.utils
 
 
@@ -23,7 +24,7 @@ class Command(papis.commands.Command):
         )
 
     def main(self):
-        documents = papis.utils.get_documents_in_lib(
+        documents = papis.api.get_documents_in_lib(
             self.get_args().lib,
             self.get_args().search
         )
@@ -34,4 +35,4 @@ class Command(papis.commands.Command):
                 sys.exit(0)
         print("Removing %s..." % folder)
         shutil.rmtree(folder)
-        papis.utils.clear_lib_cache()
+        papis.api.clear_lib_cache()

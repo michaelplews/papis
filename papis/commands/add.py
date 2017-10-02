@@ -7,6 +7,7 @@ import hashlib
 import shutil
 import string
 import subprocess
+import papis.api
 import papis.utils
 import papis.config
 import papis.bibtex
@@ -46,8 +47,8 @@ class Command(papis.commands.Command):
 
         self.parser.add_argument(
             "--name",
-            help="Name for the main folder",
-            default="",
+            help="Name for the document's folder (papis format)",
+            default=papis.config.get('add-name'),
             action="store"
         )
 
@@ -80,6 +81,14 @@ class Command(papis.commands.Command):
         )
 
         self.parser.add_argument(
+            "--from-folder",
+            help="Add document from folder being a valid papis document"
+                 " (containing info.yaml)",
+            default="",
+            action="store"
+        )
+
+        self.parser.add_argument(
             "--from-url",
             help="Get document and information from a"
                 "given url, a parser must be implemented",
@@ -90,6 +99,13 @@ class Command(papis.commands.Command):
         self.parser.add_argument(
             "--from-doi",
             help="Doi to try to get information from",
+            default=None,
+            action="store"
+        )
+
+        self.parser.add_argument(
+            "--from-pmid",
+            help="PMID to try to get information from",
             default=None,
             action="store"
         )
@@ -136,6 +152,12 @@ class Command(papis.commands.Command):
             action="store_true"
         )
 
+        self.parser.add_argument(
+            "--no-document",
+            help="Add entry without a document related to it",
+            action="store_true"
+        )
+
     def get_hash_folder(self, data, document_path):
         """Folder name where the document will be stored.
 
@@ -145,11 +167,10 @@ class Command(papis.commands.Command):
         """
         author = "-{:.20}".format(data["author"])\
                  if "author" in data.keys() else ""
-        fd = open(document_path, "rb")
-        md5 = hashlib.md5(fd.read(4096)).hexdigest()
-        fd.close()
-        result = re.sub(r"[\\'\",.(){}]", "", md5 + author)\
-                   .replace(" ", "-")
+        with open(document_path, "rb") as fd:
+            md5 = hashlib.md5(fd.read(4096)).hexdigest()
+        result = md5 + author
+        result = papis.utils.clean_document_name(result)
         return result
 
     def get_document_extension(self, documentPath):
@@ -198,15 +219,6 @@ class Command(papis.commands.Command):
                 )
         return author
 
-    def clean_document_name(self, documentPath):
-        base = os.path.basename(documentPath)
-        self.logger.debug("Cleaning document name %s " % base)
-        cleaned = re.sub(
-            r"[^a-zA-Z0-9_.-]", "",
-            re.sub(r"\s+", "-", base)
-        )
-        return cleaned
-
     def init_contact_mode(self):
         """Initialize the contact mode
         """
@@ -226,24 +238,62 @@ class Command(papis.commands.Command):
             self.init_contact_mode()
         lib_dir = os.path.expanduser(papis.config.get('dir'))
         data = dict()
+        # The folder name of the new document that will be created
         out_folder_name = None
+        # The real paths of the documents to be added
         in_documents_paths = self.args.document
+        # The basenames of the documents to be added
         in_documents_names = []
+        # The folder name of the temporary document to be created
         temp_dir = tempfile.mkdtemp("-"+self.args.lib)
+
+        if self.args.from_folder:
+            original_document = papis.document.Document(self.args.from_folder)
+            self.args.from_yaml = original_document.get_info_file()
+            in_documents_paths = original_document.get_files()
+
         if self.args.from_url:
             url_data = papis.downloaders.utils.get(self.args.from_url)
             data.update(url_data["data"])
             in_documents_paths.extend(url_data["documents_paths"])
             # If no data was retrieved and doi was found, try to get
             # information with the document's doi
-            self.logger.warning(
-                "I could not get any data from %s" % self.args.from_url
-            )
             if not data and url_data["doi"] is not None and\
                 not self.args.from_doi:
+                self.logger.warning(
+                    "I could not get any data from %s" % self.args.from_url
+                )
                 self.args.from_doi = url_data["doi"]
+
         if self.args.from_bibtex:
-            data.update(papis.bibtex.bibtex_to_dict(self.args.from_bibtex))
+            bib_data = papis.bibtex.bibtex_to_dict(self.args.from_bibtex)
+            if len(bib_data) > 1:
+                self.logger.warning(
+                    'Your bibtex file contains more than one entry,'
+                    ' I will be taking the first entry'
+                )
+            data.update(bib_data[0])
+
+        if self.args.from_pmid:
+            self.logger.debug(
+                "I'll try using PMID %s via HubMed" % self.args.from_pmid
+            )
+            hubmed_url = "http://pubmed.macropus.org/articles/"\
+                         "?format=text%%2Fbibtex&id=%s" % self.args.from_pmid
+            bibtex_data = papis.downloaders.utils.get_downloader(
+                hubmed_url,
+                "get"
+            ).getDocumentData().decode("utf-8")
+            bibtex_data = papis.bibtex.bibtex_to_dict(bibtex_data)
+            if len(bibtex_data):
+                data.update(bibtex_data[0])
+                if "doi" in data and not self.args.from_doi:
+                    self.args.from_doi = data["doi"]
+            else:
+                self.logger.error(
+                    "PMID %s not found or invalid" % self.args.from_pmid
+                )
+
         if self.args.from_doi:
             self.logger.debug("I'll try using doi %s" % self.args.from_doi)
             data.update(papis.utils.doi_to_data(self.args.from_doi))
@@ -261,16 +311,18 @@ class Command(papis.commands.Command):
                 with open(file_name, 'wb+') as fd:
                     fd.write(down.getDocumentData())
                 self.logger.info('Opening the file')
-                papis.utils.open_file(file_name)
+                papis.api.open_file(file_name)
                 if papis.utils.confirm('Do you want to use this file?'):
                     self.args.document.append(file_name)
 
         if self.args.from_yaml:
+            self.logger.debug("Yaml input file = %s" % self.args.from_yaml)
             data.update(papis.utils.yaml_to_data(self.args.from_yaml))
+
         if self.args.from_vcf:
             data.update(papis.utils.vcf_to_data(self.args.from_vcf))
         in_documents_names = [
-            self.clean_document_name(doc_path)
+            papis.utils.clean_document_name(doc_path)
             for doc_path in in_documents_paths
         ]
 
@@ -280,7 +332,7 @@ class Command(papis.commands.Command):
             self.logger.debug(
                 "Searching for the document where to add the files"
             )
-            documents = papis.utils.get_documents_in_dir(
+            documents = papis.api.get_documents_in_dir(
                 lib_dir,
                 self.args.to
             )
@@ -291,19 +343,28 @@ class Command(papis.commands.Command):
             )
             document.save()
             data = document.to_dict()
-            in_documents_paths = [
-                os.path.join(
-                    document.get_main_folder(),
-                    d
-                ) for d in document.get_files()
-            ] + in_documents_paths
-            data["files"] = document.get_files() + in_documents_names
+            in_documents_paths = document.get_files() + in_documents_paths
+            data["files"] = [os.path.basename(f) for f in in_documents_paths]
             # set out folder name the folder of the found document
             out_folder_name = document.get_main_folder_name()
             out_folder_path = document.get_main_folder()
         else:
             document = papis.document.Document(temp_dir)
             if not papis.config.in_mode("contact"):
+                if len(in_documents_paths) == 0:
+                    if not self.get_args().no_document:
+                        self.logger.error("No documents to be added")
+                        sys.exit(1)
+                    else:
+                        in_documents_paths = [document.get_info_file()]
+                        # We need the names to add them in the file field
+                        # in the info file
+                        in_documents_names = [papis.utils.get_info_file_name()]
+                        # Save document to create the info file
+                        document.update(
+                            data, force=True, interactive=self.args.interactive
+                        )
+                        document.save()
                 data["title"] = self.args.title or self.get_default_title(
                     data,
                     in_documents_paths[0]
@@ -314,16 +375,27 @@ class Command(papis.commands.Command):
                 )
                 self.logger.debug("Author = % s" % data["author"])
                 self.logger.debug("Title = % s" % data["title"])
+
             if not self.args.name:
+                self.logger.debug("Getting an automatic name")
                 out_folder_name = self.get_hash_folder(
                     data,
                     in_documents_paths[0]
                 )
             else:
-                out_folder_name = string\
-                            .Template(self.args.name)\
-                            .safe_substitute(data)\
-                            .replace(" ", "-")
+                temp_doc = papis.document.Document(data=data)
+                out_folder_name = papis.utils.format_doc(
+                    self.args.name,
+                    temp_doc
+                )
+                out_folder_name = papis.utils.clean_document_name(
+                    out_folder_name
+                )
+                del temp_doc
+            if len(out_folder_name) == 0:
+                self.logger.error('The output folder name is empty')
+                sys.exit(1)
+
             data["files"] = in_documents_names
             out_folder_path = os.path.join(
                 lib_dir, self.args.dir,  out_folder_name
@@ -337,9 +409,6 @@ class Command(papis.commands.Command):
         if not os.path.isdir(temp_dir):
             self.logger.debug("Creating directory '%s'" % temp_dir)
             os.makedirs(temp_dir)
-        if not os.path.isdir(out_folder_path):
-            self.logger.debug("Creating directory '%s'" % out_folder_path)
-            os.makedirs(out_folder_path)
 
         # Check if the user wants to edit before submitting the doc
         # to the library
@@ -349,11 +418,12 @@ class Command(papis.commands.Command):
             )
             document.save()
             self.logger.debug("Editing file before adding it")
-            papis.utils.edit_file(document.get_info_file())
+            papis.api.edit_file(document.get_info_file())
             self.logger.debug("Loading the changes made by editing")
             document.load()
             data = document.to_dict()
 
+        # First prepare everything in the temporary directory
         for i in range(min(len(in_documents_paths), len(data["files"]))):
             in_doc_name = data["files"][i]
             in_file_path = in_documents_paths[i]
@@ -367,19 +437,20 @@ class Command(papis.commands.Command):
                     "%s already exists, ignoring..." % endDocumentPath
                 )
                 continue
-            self.logger.debug(
-                "[CP] '%s' to '%s'" %
-                (in_file_path, endDocumentPath)
-            )
-            shutil.copy(in_file_path, endDocumentPath)
+            if not self.args.no_document:
+                self.logger.debug(
+                    "[CP] '%s' to '%s'" %
+                    (in_file_path, endDocumentPath)
+                )
+                shutil.copy(in_file_path, endDocumentPath)
 
         document.update(data, force=True)
         if self.get_args().open:
             for d_path in in_documents_paths:
-                papis.utils.open_file(d_path)
+                papis.api.open_file(d_path)
         if self.args.confirm:
             if not papis.utils.confirm('Really add?'):
-                sys.exit(0)
+                return 0
         document.save()
         if self.args.to:
             sys.exit(0)
@@ -388,7 +459,7 @@ class Command(papis.commands.Command):
             (document.get_main_folder(), out_folder_path)
         )
         shutil.move(document.get_main_folder(), out_folder_path)
-        papis.utils.clear_lib_cache()
+        papis.api.clear_lib_cache()
         if self.args.commit and papis.utils.lib_is_git_repo(self.args.lib):
             subprocess.call(["git", "-C", out_folder_path, "add", "."])
             subprocess.call(

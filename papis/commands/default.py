@@ -1,5 +1,7 @@
 import os
 import sys
+import papis
+import papis.api
 import papis.config
 import papis.commands
 import logging
@@ -13,6 +15,14 @@ class Command(papis.commands.Command):
             "-v",
             "--verbose",
             help="Make the output verbose (equivalent to --log DEBUG)",
+            default=False,
+            action="store_true"
+        )
+
+        self.default_parser.add_argument(
+            "-V",
+            "--version",
+            help="Show version number",
             default=False,
             action="store_true"
         )
@@ -77,7 +87,7 @@ class Command(papis.commands.Command):
         self.default_parser.add_argument(
             "--set",
             help="Set key value, e.g., "
-                 "--set info-name=information.yaml:opentool=evince",
+                 "--set info-name=information.yaml,opentool=evince",
             action="store"
         )
 
@@ -92,10 +102,13 @@ class Command(papis.commands.Command):
             format=log_format
         )
 
+        if self.args.version:
+            print('Papis - %s' % papis.__version__)
+            sys.exit(0)
+
         if self.args.set:
-            key_vals = [d.split("=") for d in self.args.set.split(":")]
+            key_vals = [d.split("=") for d in self.args.set.split(",")]
             for pair in key_vals:
-                print(pair)
                 key = pair[0]
                 val = pair[1]
                 papis.config.set(key, val)
@@ -109,7 +122,10 @@ class Command(papis.commands.Command):
             papis.config.set("picktool", self.args.picktool)
 
         if self.args.pick_lib:
-            self.args.lib = papis.utils.pick(papis.utils.get_libraries())
+            self.args.lib = papis.api.pick(
+                papis.api.get_libraries(),
+                pick_config=dict(header_filter=lambda x: x)
+            )
 
         if self.args.lib not in self.get_config().keys():
             if os.path.exists(self.args.lib):
@@ -124,7 +140,7 @@ class Command(papis.commands.Command):
                 sys.exit(1)
 
         if self.args.clear_cache:
-            papis.utils.clear_lib_cache(self.args.lib)
+            papis.api.clear_lib_cache(self.args.lib)
 
         commands = papis.commands.get_commands()
 

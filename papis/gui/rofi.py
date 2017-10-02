@@ -1,5 +1,6 @@
 import rofi
 import webbrowser
+import papis.api
 import papis.utils
 import papis.config
 
@@ -23,12 +24,11 @@ def get_options():
     return options
 
 
-def pick(
-        options,
-        header_filter=lambda x: x,
-        body_filter=None,
-        match_filter=lambda x: x
-        ):
+def pick(options, header_filter=None, body_filter=None, match_filter=None):
+    if header_filter is None:
+        header_filter = lambda x: papis.utils.format_doc(
+            papis.config.get('header-format', section='rofi-gui'), x
+        )
     if len(options) == 1:
         indices = 0
     else:
@@ -164,10 +164,10 @@ class Gui(object):
         )
         if answer and answer in "Yy":
             doc.rm()
-            self.documents = self.fetch_documents()
+            self.documents = papis.api.get_documents_in_lib()
 
     def open(self, doc):
-        papis.utils.open_file(
+        papis.api.open_file(
             doc.get_files()
         )
 

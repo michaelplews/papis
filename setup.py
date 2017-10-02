@@ -39,8 +39,10 @@ setup(
     license=papis.__license__,
     url='https://github.com/alejandrogallo/papis',
     install_requires=[
+        "papis-python-rofi>=1.0.1",
         "requests>=2.11.1",
         "argcomplete>=1.8.2",
+        "pyparsing>=2.2.0",
         "configparser>=3.0.0",
         "arxiv2bib>=1.0.7",
         "PyYAML>=3.12",
@@ -48,8 +50,11 @@ setup(
         "beautifulsoup4>=4.4.1",
         "vobject>=0.9.4.1",
         "prompt-toolkit>=1.0.0",
-        "python-rofi",
+        "bibtexparser>=0.6.2",
+        "Unidecode>=0.4.21",
+        "pyparser>=1.0",
     ],
+    python_requires='>=3',
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Environment :: Console',
@@ -67,9 +72,6 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Topic :: Utilities',
     ],
-    dependency_links=[
-        "http://github.com/alejandrogallo/python-rofi/tarball/master"
-    ],
     extras_require=dict(
         # List additional groups of dependencies here (e.g. development
         # dependencies). You can install these using the following syntax,
@@ -78,11 +80,13 @@ setup(
         develop=[
             "sphinx",
             'sphinx-argparse',
+            'sphinx_rtd_theme',
             'pytest',
         ]
     ),
-    description='Simple program to manage literature',
-    long_description='Simple program to manage literature',
+    description='Powerful and highly extensible command-line based document '
+                'and bibliography manager',
+    long_description='',
     keywords=[
         'document',
         'books',
@@ -96,6 +100,22 @@ setup(
             'gui/vim/main.vim',
         ],
     ),
+    data_files=[
+
+        ("share/doc/papis/", [
+            "README.md",
+        ]),
+
+        ("share/man/man1", [
+            "doc/build/man/papis.1",
+            "doc/build/man/papis-config.1",
+        ]),
+
+        ("share/applications", [
+            "contrib/papis.desktop",
+        ]),
+
+    ],
     packages=[
         "papis",
         "papis.gui",

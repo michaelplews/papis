@@ -8,12 +8,10 @@ logger = logging.getLogger("cache")
 
 
 def get_folder():
-    """Get folder where the cache files are stored,
-    e.g. /home/user/.papis/cache
+    """Get folder where the cache files are stored, it retrieves the
+    ``cache-dir`` configuration setting. It is ``XDG`` standard compatible.
     """
-    return os.path.join(
-        papis.config.get_config_folder(), "cache"
-    )
+    return os.path.expanduser(papis.config.get('cache-dir'))
 
 
 def get(path):
@@ -82,8 +80,6 @@ def clear_lib_cache(lib=None):
     :param lib: Library name.
     :type  lib: str
     """
-    if lib is None:
-        lib = papis.utils.get_lib()
     directory = papis.config.get("dir", section=lib)
     clear(directory)
 

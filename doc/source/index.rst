@@ -19,7 +19,9 @@ command-line interface (*CLI*) is heavily tailored after
    info_file
    database_structure
    commands
+   queries
    scripting
+   api
 
 
 
