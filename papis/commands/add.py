@@ -91,6 +91,13 @@ class Command(papis.commands.Command):
         )
 
         self.parser.add_argument(
+            "--ref",
+            help="Reference key for document",
+            default="",
+            action="store"
+        )
+
+        self.parser.add_argument(
             "--from-bibtex",
             help="Parse information from a bibtex file",
             default="",
@@ -251,6 +258,17 @@ class Command(papis.commands.Command):
                 )
         return author
 
+    def get_default_ref(self, data, document_path):
+        if "ref" in data.keys(): return data["ref"]
+        ref = self.get_meta_data("ref", document_path)
+        if not ref:
+            ref = "Unknown"
+            if self.get_args().interactive:
+                ref = papis.utils.input(
+                    'Ref?', ref
+                )
+        return ref
+    
     def init_contact_mode(self):
         """Initialize the contact mode
         """
@@ -406,6 +424,10 @@ class Command(papis.commands.Command):
                         )
                         document.save()
                 data["title"] = self.args.title or self.get_default_title(
+                    data,
+                    in_documents_paths[0]
+                )
+                data["ref"] = self.args.ref or self.get_default_ref(
                     data,
                     in_documents_paths[0]
                 )
