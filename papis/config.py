@@ -1,5 +1,4 @@
-"""
-General
+"""General
 *******
 
 
@@ -263,6 +262,12 @@ General
     Since we should be living in an unicode world, it is set to ``True``
     by default.
 
+.. papis-config:: ref-format
+
+   This flag is to be set to your preference of ref tag when
+   importing a new document. The currect default is the documents doi
+   (if available).
+
 """
 import logging
 
@@ -353,8 +358,7 @@ general_settings = {
     "header-format"   : \
         "{doc[title]:<70.70}|{doc[author]:<20.20} ({doc[year]:-<4})",
     "info-allow-unicode": True,
-    "ref-format"      : \
-        "{doc[doi]}",
+    "ref-format"      : "{doc[doi]}",
 }
 
 def get_general_settings_name():

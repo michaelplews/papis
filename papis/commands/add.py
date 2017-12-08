@@ -90,12 +90,12 @@ class Command(papis.commands.Command):
             action="store"
         )
 
-        self.parser.add_argument(
-            "--ref",
-            help="Reference key for document",
-            default="",
-            action="store"
-        )
+        # self.parser.add_argument(
+        #     "--ref",
+        #     help="Reference key for document",
+        #     default="",
+        #     action="store"
+        # )
 
         self.parser.add_argument(
             "--from-bibtex",
@@ -428,10 +428,10 @@ class Command(papis.commands.Command):
                     data,
                     in_documents_paths[0]
                 )
-                data["ref"] = self.args.ref or self.get_default_ref(
-                    data,
-                    in_documents_paths[0]
-                )
+                # data["ref"] = self.args.ref or self.get_default_ref(
+                #     data,
+                #     in_documents_paths[0]
+                # )
                 data["author"] = self.args.author or self.get_default_author(
                     data,
                     in_documents_paths[0]

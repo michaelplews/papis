@@ -334,8 +334,14 @@ def get_cross_ref(doi):
     res.update(get_citation_info_from_results(record))
 
     # REFERENCE BUILDING
-    res["ref"] = doi
-
+    # print ({res['issue']})
+    # res["ref"] = {res['issue']}
+    # res["ref"] = res['issue']
+    res["ref"] = papis.utils.format_doc(papis.config.get("ref-format"),res, key=papis.config.get("ref-format"))
+# papis.utils.format_doc(
+#         papis.config.get("ref-format"),
+#         doc, key=papis.config.get("ref-format")
+#         )
     # Journal checking
     # If the key journal does not exist check for abbrev_journal_title
     # and full_journal_title and set it then to one of them
