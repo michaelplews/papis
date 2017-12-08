@@ -66,8 +66,9 @@ general_settings = {
         "{doc[tags]}{doc.subfolder}{doc[title]}{doc[author]}{doc[year]}",
     "header-format"   : \
         "{doc[title]:<70.70}|{doc[author]:<20.20} ({doc[year]:-<4})",
+    "ref-format"      : \
+        "{doc[doi]}",
 }
-
 
 def get_general_settings_name():
     """Get the section name of the general settings
