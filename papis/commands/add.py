@@ -428,10 +428,6 @@ class Command(papis.commands.Command):
                     data,
                     in_documents_paths[0]
                 )
-                # data["ref"] = self.args.ref or self.get_default_ref(
-                #     data,
-                #     in_documents_paths[0]
-                # )
                 data["author"] = self.args.author or self.get_default_author(
                     data,
                     in_documents_paths[0]

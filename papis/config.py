@@ -1,4 +1,5 @@
-"""General
+"""
+General
 *******
 
 
@@ -264,9 +265,18 @@
 
 .. papis-config:: ref-format
 
-   This flag is to be set to your preference of ref tag when
-   importing a new document. The currect default is the documents doi
-   (if available).
+   This flag is to be set to your preference of ref tag when importing
+   a new document. the format shoul follow that of other `-format`
+   commands. This is useful for users who prefer to use different
+   reference keys in BibTex files.
+
+   Some examples:
+       ref-format entry                          : Output       : Example
+       ------------------------------------------:--------------:---------------
+       {doc[author_list][0][surname]}{doc[year]} : LastnameYear : e.g. Plews2019
+       {doc[abbrev_journal_title]}{doc[year]}    : JournalYear  : e.g. J. Mater. Chem. A2017
+
+ The currect default is the documents doi (if available).
 
 """
 import logging
