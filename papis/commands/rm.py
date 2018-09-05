@@ -1,9 +1,19 @@
+"""
+
+Cli
+^^^
+.. click:: papis.commands.rm:cli
+    :prog: papis rm
+"""
 import papis
 import papis.api
 from papis.api import status
 import papis.utils
 import papis.config
 import papis.document
+import papis.cli
+import papis.database
+import click
 
 
 def run(
@@ -25,52 +35,52 @@ def run(
     return status.success
 
 
-class Command(papis.commands.Command):
-    def init(self):
-
-        self.parser = self.get_subparsers().add_parser(
-            "rm",
-            help="Delete entry"
+@click.command()
+@click.help_option('-h', '--help')
+@papis.cli.query_option()
+@click.option(
+    "--file",
+    help="Remove files from a document instead of the whole folder",
+    is_flag=True,
+    default=False
+)
+@click.option(
+    "-f", "--force",
+    help="Do not confirm removal",
+    is_flag=True,
+    default=False
+)
+def cli(
+        query,
+        file,
+        force
+        ):
+    """Delete command for several objects"""
+    documents = papis.database.get().query(query)
+    document = papis.api.pick_doc(documents)
+    if not document:
+        return status.file_not_found
+    if file:
+        filepath = papis.api.pick(
+            document.get_files()
         )
-
-        self.add_search_argument()
-
-        self.parser.add_argument(
-            "--file",
-            help="Remove files from a document instead of the whole folder",
-            default=False,
-            action="store_true"
-        )
-
-        self.parser.add_argument(
-            "-f", "--force",
-            help="Do not confirm removal",
-            default=False,
-            action="store_true"
-        )
-
-    def main(self):
-        documents = self.get_db().query(self.args.search)
-        document = self.pick(documents)
-        if not document:
+        if not filepath:
             return status.file_not_found
-        if self.get_args().file:
-            filepath = papis.api.pick(
-                document.get_files()
+        if not force:
+            toolbar = 'The file {0} would be removed'.format(filepath)
+            if not papis.utils.confirm("Are you sure?", bottom_toolbar=toolbar):
+                return status.success
+        click.echo("Removing %s..." % filepath)
+        return run(
+            document,
+            filepath=filepath
+        )
+    else:
+        if not force:
+            toolbar = 'The folder {0} would be removed'.format(
+                document.get_main_folder()
             )
-            if not filepath:
-                return status.file_not_found
-            if not self.args.force:
-                if not papis.utils.confirm("Are you sure?"):
-                    return status.success
-            print("Removing %s..." % filepath)
-            return run(
-                document,
-                filepath=filepath
-            )
-        else:
-            if not self.args.force:
-                if not papis.utils.confirm("Are you sure?"):
-                    return status.success
-            print("Removing ...")
-            return run(document)
+            if not papis.utils.confirm("Are you sure?", bottom_toolbar=toolbar):
+                return status.success
+        click.echo("Removing ...")
+        return run(document)

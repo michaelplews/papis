@@ -60,6 +60,10 @@ Python examples
 
     # do something with the info file paths...
 
+Cli
+^^^
+.. click:: papis.commands.list:cli
+    :prog: papis list
 """
 
 import logging
@@ -70,13 +74,15 @@ import papis.utils
 import papis.config
 import papis.database
 import papis.downloaders.utils
+import papis.cli
+import click
 
 logger = logging.getLogger('list')
 
 
 def run(
         query="",
-        library=papis.config.get_lib(),
+        library=None,
         libraries=False,
         downloaders=False,
         pick=False,
@@ -91,6 +97,8 @@ def run(
     :returns: List different objects
     :rtype:  list
     """
+    if library is None:
+        library = papis.config.get_lib()
     config = papis.config.get_configuration()
     db = papis.database.get(library)
     if template is not None:
@@ -104,7 +112,7 @@ def run(
         fd.close()
 
     if downloaders:
-        return papis.downloaders.utils.getAvailableDownloaders()
+        return papis.downloaders.utils.get_available_downloaders()
 
     if libraries:
         return [
@@ -144,93 +152,90 @@ def run(
         return documents
 
 
-class Command(papis.commands.Command):
-    def init(self):
+@click.command()
+@click.help_option('--help', '-h')
+@papis.cli.query_option()
+@click.option(
+    "-i",
+    "--info",
+    help="Show the info file name associated with the document",
+    default=False,
+    is_flag=True
+)
+@click.option(
+    "-f",
+    "--file",
+    help="Show the file name associated with the document",
+    default=False,
+    is_flag=True
+)
+@click.option(
+    "-d",
+    "--dir",
+    help="Show the folder name associated with the document",
+    default=False,
+    is_flag=True
+)
+@click.option(
+    "--format",
+    help="List entries using a custom papis format, e.g."
+    " '{doc[year] {doc[title]}",
+    default=None
+)
+@click.option(
+    "--template",
+    help="Template file containing a papis format to list entries",
+    default=None
+)
+@click.option(
+    "-p",
+    "--pick",
+    help="Pick the document instead of listing everything",
+    default=False,
+    is_flag=True
+)
+@click.option(
+    "--downloaders",
+    help="List available downloaders",
+    default=False,
+    is_flag=True
+)
+@click.option(
+    "--libraries",
+    help="List defined libraries",
+    default=False,
+    is_flag=True
+)
+def cli(
+        query,
+        info,
+        file,
+        dir,
+        format,
+        template,
+        pick,
+        downloaders,
+        libraries
+        ):
+    """List documents' properties"""
 
-        self.parser = self.get_subparsers().add_parser(
-            "list",
-            help="List documents from a given library"
-        )
+    if not libraries and not downloaders and not file and not info and not dir:
+        dir = True
 
-        self.add_search_argument()
+    lib = papis.config.get_lib()
 
-        self.parser.add_argument(
-            "-i",
-            "--info",
-            help="Show the info file name associated with the document",
-            default=False,
-            action="store_true"
-        )
-
-        self.parser.add_argument(
-            "-f",
-            "--file",
-            help="Show the file name associated with the document",
-            action="store_true"
-        )
-
-        self.parser.add_argument(
-            "-d",
-            "--dir",
-            help="Show the folder name associated with the document",
-            action="store_true"
-        )
-
-        self.parser.add_argument(
-            "--format",
-            help="List entries using a custom papis format, e.g."
-            " '{doc[year] {doc[title]}",
-            default=None,
-            action="store"
-        )
-
-        self.parser.add_argument(
-            "--template",
-            help="Template file containing a papis format to list entries",
-            default=None,
-            action="store"
-        )
-
-        self.parser.add_argument(
-            "-p",
-            "--pick",
-            help="Pick the document instead of listing everything",
-            action="store_true"
-        )
-
-        self.parser.add_argument(
-            "--downloaders",
-            help="List available downloaders",
-            action="store_true"
-        )
-
-        self.parser.add_argument(
-            "--libraries",
-            help="List defined libraries",
-            action="store_true"
-        )
-
-    def main(self):
-
-        if not self.args.libraries and \
-            not self.args.downloaders and \
-            not self.args.file and \
-            not self.args.info and \
-                not self.args.dir:
-            self.args.dir = True
-
-        objects = run(
-            query=self.args.search,
-            library=self.args.lib,
-            libraries=self.args.libraries,
-            downloaders=self.args.downloaders,
-            pick=self.args.pick,
-            files=self.args.file,
-            folders=self.args.dir,
-            info_files=self.args.info,
-            fmt=self.args.format,
-            template=self.args.template
-        )
-        for o in objects:
-            print(o)
-        return status.success
+    objects = run(
+        query=query,
+        library=lib,
+        libraries=libraries,
+        downloaders=downloaders,
+        pick=pick,
+        files=file,
+        folders=dir,
+        info_files=info,
+        fmt=format,
+        template=template
+    )
+    for o in objects:
+        click.echo(o)
+    return status.success

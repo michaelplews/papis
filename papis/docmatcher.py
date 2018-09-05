@@ -1,6 +1,7 @@
 import papis.config
 import logging
 
+
 class DocMatcher(object):
     """This class implements the mini query language for papis.
     All its methods are static, it could be also implemented as a separate
@@ -30,6 +31,24 @@ class DocMatcher(object):
         :type  doc: papis.document.Document
         :returns: True if it matches, False if some query requirement does
             not match.
+
+        >>> import papis.document
+        >>> from papis.database.cache import match_document
+        >>> doc = papis.document.from_data(dict(title='einstein'))
+        >>> DocMatcher.set_matcher(match_document)
+        >>> DocMatcher.parse('einste')
+        ([(['einste'], {})], {})
+        >>> DocMatcher.return_if_match(doc) is not None
+        True
+        >>> DocMatcher.parse('heisenberg')
+        ([(['heisenberg'], {})], {})
+        >>> DocMatcher.return_if_match(doc) is not None
+        False
+        >>> DocMatcher.parse('title = ein')
+        ([(['title', '=', 'ein'], {})], {})
+        >>> DocMatcher.return_if_match(doc) is not None
+        True
+
         """
         match = None
         for parsed in cls.parsed_search:
@@ -38,7 +57,7 @@ class DocMatcher(object):
                 sformat = None
             elif len(parsed) == 3:
                 search = parsed[2]
-                sformat = cls.doc_format.replace('DOC_KEY',parsed[0])
+                sformat = cls.doc_format.replace('DOC_KEY', parsed[0])
             match = doc if cls.matcher(doc, search, sformat) else None
             if not match:
                 break
@@ -46,14 +65,23 @@ class DocMatcher(object):
 
     @classmethod
     def set_search(cls, search):
+        """
+        >>> DocMatcher.set_search('author = Hummel')
+        >>> DocMatcher.search
+        'author = Hummel'
+        """
         cls.search = search
 
     @classmethod
     def set_matcher(cls, matcher):
+        """
+        >>> from papis.database.cache import match_document
+        >>> DocMatcher.set_matcher(match_document)
+        """
         cls.matcher = matcher
 
     @classmethod
-    def parse(cls, search=False):
+    def parse(cls, search=None):
         """Parse the main query text. This method will also set the
         class attribute `parsed_search` to the parsed query, and it will
         return it too.
@@ -75,7 +103,8 @@ class DocMatcher(object):
         >>> print(DocMatcher.parse('hello'))
         [['hello']]
         """
-        search = search or cls.search
+        if search is None:
+            search = cls.search
         cls.parsed_search = parse_query(search)
         return cls.parsed_search
 
@@ -88,7 +117,6 @@ def parse_query(query_string):
     import pyparsing
     logger = logging.getLogger('query_parser')
     logger.debug('Parsing search')
-    papis_alphas = pyparsing.printables.replace('=', '')
     papis_key = pyparsing.Word(pyparsing.alphanums + '-')
     papis_value = pyparsing.QuotedString(
         quoteChar='"', escChar='\\', escQuote='\\'
@@ -96,8 +124,8 @@ def parse_query(query_string):
         quoteChar="'", escChar='\\', escQuote='\\'
     ) ^ papis_key
     equal = pyparsing.ZeroOrMore(" ") + \
-            pyparsing.Literal('=')    + \
-            pyparsing.ZeroOrMore(" ")
+        pyparsing.Literal('=') + \
+        pyparsing.ZeroOrMore(" ")
 
     papis_query = pyparsing.ZeroOrMore(
         pyparsing.Group(

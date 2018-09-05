@@ -30,10 +30,14 @@ it with
 
 You can find a list of all available settings in the configuration section.
 
-
+Cli
+^^^
+.. click:: papis.commands.config:cli
+    :prog: papis config
 """
 import papis.commands
 import logging
+import click
 
 
 def run(option_string):
@@ -50,22 +54,12 @@ def run(option_string):
     return val
 
 
-class Command(papis.commands.Command):
-    def init(self):
-
-        self.parser = self.get_subparsers().add_parser(
-            "config",
-            help="Print configuration values"
-        )
-
-        self.parser.add_argument(
-            "option",
-            help="Variable to print",
-            default="",
-            action="store"
-        )
-
-    def main(self):
-        self.logger.debug(self.args.option)
-        print(run(self.args.option))
-        return 0
+@click.command()
+@click.help_option('--help', '-h')
+@click.argument("option")
+def cli(option):
+    """Print configuration values"""
+    logger = logging.getLogger('cli:config')
+    logger.debug(option)
+    click.echo(run(option))
+    return 0

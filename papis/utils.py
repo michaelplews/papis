@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from subprocess import call
 import logging
 from itertools import count, product
@@ -7,7 +8,6 @@ logger.debug("importing")
 
 import os
 import re
-import string
 import papis.api
 import papis.config
 import papis.commands
@@ -17,22 +17,43 @@ import papis.bibtex
 import papis.exceptions
 
 
-def general_open(fileName, key, default_opener="xdg-open", wait=True):
+def general_open(fileName, key, default_opener=None, wait=True):
+    """Wraper for openers
+
+
+    >>> import tempfile; path = tempfile.mktemp()
+    >>> general_open(path, 'nonexistent-key', wait=False).stdin == None
+    True
+    >>> general_open(path, 'nonexistent-key') > 0
+    True
+    >>> general_open([path], 'nonexistent-key', default_opener=lambda path: 42)
+    42
+    >>> general_open([path], 'nonexistent-key', default_opener=tempfile)
+    Traceback (most recent call last):
+    ...
+    Warning: How should I use the opener ...?
+    >>> papis.config.set('editor', 'echo')
+    >>> general_open([path], 'editor', wait=False)
+    <subprocess.Popen...>
+    """
     try:
         opener = papis.config.get(key)
     except papis.exceptions.DefaultSettingValueMissing:
+        if default_opener is None:
+            default_opener = papis.config.get_default_opener()
         opener = default_opener
     if isinstance(fileName, list):
         fileName = papis.api.pick(fileName)
-    # Take care of spaces in filenames
     if isinstance(opener, str):
+        import subprocess
+        import shlex
+        cmd = shlex.split("{0} '{1}'".format(opener, fileName))
+        logger.debug("cmd:  %s" % cmd)
         if wait:
-            fileName = "\"{}\"".format(fileName)
-            return os.system(" ".join([opener, fileName]))
+            logger.debug("Waiting for process to finsih")
+            return subprocess.call(cmd)
         else:
-            cmd = opener.split() + [fileName]
-            logger.debug("Open cmd %s" % cmd)
-            import subprocess
+            logger.debug("Not waiting for process to finish")
             return subprocess.Popen(
                 cmd, shell=False,
                 stdin=None, stdout=None, stderr=None, close_fds=True
@@ -41,8 +62,6 @@ def general_open(fileName, key, default_opener="xdg-open", wait=True):
         return opener(fileName)
     else:
         raise Warning("How should I use the opener %s?" % opener)
-
-
 
 
 def format_doc(python_format, document, key=""):
@@ -57,16 +76,21 @@ def format_doc(python_format, document, key=""):
     :type  document: papis.document.Document
     :returns: Formated string
     :rtype: str
-    >>> import papis.document
-    >>> document = papis.document.Document(\
-            data=dict(author='Fulano', title='Something') \
-        )
-    >>> format_doc('{doc[author]}{doc[title]}', document)
-    'FulanoSomething'
-    >>> format_doc('{doc[author]}{doc[title]}{doc[blahblah]}', document)
-    'FulanoSomething'
     """
     doc = key or papis.config.get("format-doc-name")
+    if papis.config.getboolean('format-jinja2-enable') is True:
+        try:
+            import jinja2
+        except ImportError:
+            logger.error("""
+            You're trying to format strings using jinja2
+            Jinja2 is not installed by default, so just install it
+
+                pip3 install jinja2
+
+            """)
+        else:
+            return jinja2.Template(python_format).render(**{doc: document})
     return python_format.format(**{doc: document})
 
 
@@ -94,6 +118,7 @@ def create_identifier(input_list):
     Ideally for use in modifying an existing string to make it unique.
 
     Example:
+    >>> import string
     >>> m = create_identifier(string.ascii_lowercase)
     >>> next(m)
     'a'
@@ -109,38 +134,6 @@ def create_identifier(input_list):
     for n in count(1):
         for s in product(input_list, repeat=n):
             yield ''.join(s)
-
-def folder_is_git_repo(folder):
-    """Check if folder is a git repository
-
-    :folder: Folder to check
-    :returns: Wether is git repo or not
-    :rtype:  bool
-
-    """
-    import subprocess
-    logger.debug("Check if %s is a git repo" % folder)
-    try:
-        subprocess.check_call(
-            ' '.join(['git', '-C', folder, 'status']),
-            stdout=None,
-            shell=True
-        )
-        logger.debug("Detected git repo in %s" % folder)
-        return True
-    except:
-        return False
-
-
-def lib_is_git_repo(library):
-    """Check if library is a git repository
-
-    :library: Library to check
-    :returns: Wether is git repo or not
-    :rtype:  bool
-    """
-    config = papis.config.get_configuration()
-    return folder_is_git_repo(config.get(library, "dir"))
 
 
 def get_info_file_name():
@@ -176,56 +169,7 @@ def yaml_to_data(yaml_path):
     return yaml.load(open(yaml_path))
 
 
-def vcf_to_data(vcard_path):
-    """Convert a vcf file into a dictionary using the vobject module.
-
-    :param vcf_path: Path to a vcf file
-    :type  vcf_path: str
-    :returns: Dictionary containing the info of the vcf file
-    :rtype:  dict
-    """
-    import vobject
-    import yaml
-    import papis.document.Document
-    data = yaml.load(papis.document.Document.get_vcf_template())
-    logger.debug("Reading in %s " % vcard_path)
-    text = open(vcard_path).read()
-    vcard = vobject.readOne(text)
-    try:
-        data["first_name"] = vcard.n.value.given
-        logger.debug("First name = %s" % data["first_name"])
-    except:
-        data["first_name"] = None
-    try:
-        data["last_name"] = vcard.n.value.family
-        logger.debug("Last name = %s" % data["last_name"])
-    except:
-        data["last_name"] = None
-    try:
-        if not isinstance(vcard.org.value[0], list):
-            data["org"] = vcard.org.value
-        else:
-            data["org"] = vcard.org.value
-        logger.debug("Org = %s" % data["org"])
-    except:
-        data["org"] = []
-    for ctype in ["tel", "email"]:
-        try:
-            vcard_asset = getattr(vcard, ctype)
-            logger.debug("Parsing %s" % ctype)
-        except:
-            pass
-        else:
-            try:
-                param_type = getattr(vcard_asset, "type_param")
-            except:
-                param_type = "home"
-            data[ctype][param_type.lower()] = getattr(vcard_asset, "value")
-    logger.debug("Read in data = %s" % data)
-    return data
-
-
-def confirm(prompt, yes=True):
+def confirm(prompt, yes=True, bottom_toolbar=None):
     """Confirm with user input
 
     :param prompt: Question or text that the user gets.
@@ -236,17 +180,21 @@ def confirm(prompt, yes=True):
     :rtype:  bool
 
     """
-    import prompt_toolkit
-    result = prompt_toolkit.prompt(
-        prompt + ' (%s): ' % ('Y/n' if yes else 'y/N')
+    result = papis.utils.input(
+        prompt,
+        bottom_toolbar=bottom_toolbar,
+        default='Y/n' if yes else 'y/N',
+        validator_function=lambda x: x in 'YyNn',
+        dirty_message='Please, write either "y" or "n" to confirm'
     )
     if yes:
-        return result not in ['N', 'n']
+        return result not in 'Nn'
     else:
-        return result not in ['Y', 'y']
+        return result not in 'Yy'
 
 
-def input(prompt, default=""):
+def input(prompt, default="", bottom_toolbar=None, multiline=False, 
+        validator_function=None, dirty_message=""):
     """Prompt user for input
 
     :param prompt: Question or text that the user gets.
@@ -258,14 +206,37 @@ def input(prompt, default=""):
 
     """
     import prompt_toolkit
+    from prompt_toolkit.validation import Validator
+    if validator_function is not None:
+        validator = Validator.from_callable(
+            validator_function,
+            error_message=dirty_message,
+            move_cursor_to_end=True
+        )
+    else:
+        validator = None
+
+    fragments = [
+        ('', prompt),
+        ('fg:red', ' ({0})'.format(default)),
+        ('', ': '),
+    ]
+
     result = prompt_toolkit.prompt(
-        prompt + ' (%s): ' % (default)
+        fragments,
+        validator=validator,
+        multiline=multiline,
+        bottom_toolbar=bottom_toolbar,
+        validate_while_typing=True
     )
+
     return result if result else default
 
 
 def clean_document_name(doc_path):
     """Get a file path and return the basename of the path cleaned.
+
+    It will also turn chinese, french, russian etc into ascii characters.
 
     :param doc_path: Path of a document.
     :type  doc_path: str
@@ -273,25 +244,17 @@ def clean_document_name(doc_path):
     :rtype:  str
 
     >>> clean_document_name('{{] __ }}albert )(*& $ß $+_ einstein (*]')
-    'albert-ss-_-einstein'
+    'albert-ss-einstein'
     >>> clean_document_name('/ashfd/df/  #$%@#$ }{_+"[ ]hello öworld--- .pdf')
-    'hello-oworld----.pdf'
+    'hello-oworld-.pdf'
     """
-    import unidecode
-    base = os.path.basename(doc_path)
-    logger.debug("Cleaning document name %s " % base)
-    trans_dict = dict.fromkeys(
-        string.punctuation.translate(
-            str.maketrans(dict.fromkeys('.-_'))
-        )
+    from slugify import slugify
+    regex_pattern = r'[^a-z0-9.]+'
+    return slugify(
+        os.path.basename(doc_path),
+        word_boundary=True,
+        regex_pattern=regex_pattern
     )
-    translation = str.maketrans(trans_dict)
-    cleaned = base.translate(translation)
-    cleaned = cleaned.strip(string.whitespace+string.punctuation)
-    cleaned = cleaned.strip()
-    cleaned = re.sub(r"\s+", "-", cleaned)
-    cleaned = unidecode.unidecode(cleaned)
-    return cleaned
 
 
 def git_commit(path="", message=""):
@@ -321,78 +284,31 @@ def locate_document(document, documents):
     :type  document: papis.document.Document
     :param documents: Documents to search in
     :type  documents: list
-    :returns: TODO
+    :returns: papis document if it is found
 
     """
     # if these keys exist in the documents, then check those first
+    # TODO: find a way to really match well titles and author
+    comparing_keys = eval(papis.config.get('unique-document-keys'))
     for d in documents:
-        for key in ['doi', 'ref', 'isbn', 'isbn10', 'url']:
+        for key in comparing_keys:
             if key in document.keys() and key in d.keys():
-                if document[key] == d[key]:
+                if re.match(document[key], d[key], re.I):
                     return d
-    # else, just try to match the usual way the documents
-    # TODO: put this into the databases
-    import papis.database.cache
-    docs = papis.database.cache.filter_documents(
-        documents,
-        search='author = "{doc[author]}" title = "{doc[title]}"'.format(
-            doc=document
-        )
-    )
-    if len(docs) == 1:
-        return docs[0]
-    return None
 
 
-def file_is(file_description, fmt):
-    """Get if file stored in `file_path` is a `fmt` document.
+def get_document_extension(document_path):
+    """Get document extension
 
-    :file_path: Full path for a `fmt` file or a buffer containing `fmt` data.
-    :returns: True if is `fmt` and False otherwise
+    :document_path: Path of the document
+    :returns: Extension (string)
 
     """
-    import magic
-    logger.debug("Checking filetype")
-    if isinstance(file_description, str):
-        # This means that the file_description is a string
-        result = re.match(
-            r".*%s.*" % fmt, magic.from_file(file_description, mime=True),
-            re.IGNORECASE
-        )
-        if result:
-            logger.debug(
-                "File %s appears to be of type %s" % (file_description, fmt)
-            )
-    elif isinstance(file_description, bytes):
-        # Suppose that file_description is a buffer
-        result = re.match(
-            r".*%s.*" % fmt, magic.from_buffer(file_description, mime=True)
-        )
-        if result:
-            logger.debug(
-                "Buffer appears to be of type %s" % (fmt)
-            )
-    return True if result else False
-
-
-def is_pdf(file_description):
-    return file_is(file_description, 'pdf')
-
-
-def is_djvu(file_description):
-    return file_is(file_description, 'djvu')
-
-
-def is_epub(file_description):
-    return file_is(file_description, 'epub')
-
-
-def is_mobi(file_description):
-    return file_is(file_description, 'mobi')
-
-
-def guess_file_extension(file_description):
-    for ext in ["pdf", "djvu", "epub", "mobi"]:
-        if eval("is_%s" % ext)(file_description):
-            return ext
-    return "txt"
+    import filetype
+    filetype.guess(document_path)
+    kind = filetype.guess(document_path)
+    if kind is None:
+        m = re.match(r"^.*\.([^.]+)$", os.path.basename(document_path))
+        return m.group(1) if m else 'data'
+    else:
+        return kind.extension

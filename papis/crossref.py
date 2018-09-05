@@ -1,21 +1,11 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Heavily adapted for papis from
-#   author: François-Xavier Coudert
-#   license: MIT License
-#   src: https://github.com/fxcoudert/tools/blob/master/doi2bib
-#
 from __future__ import unicode_literals
 import logging
-logger = logging.getLogger("crossref")
-logger.debug("importing")
-
-import unicodedata
 import re
 from string import ascii_lowercase
 import papis.config
 import papis.utils
+logger = logging.getLogger("crossref")
+logger.debug("importing")
 
 # CrossRef queries
 #
@@ -26,141 +16,18 @@ import papis.utils
 #
 CROSSREF_KEY = "fx.coudert@chimie-paristech.fr"
 CROSSREF_KEY = "a.gallo@fkf.mpg.de"
-#
-# Using Google allows one to find other API keys:
-# zter:zter321
-# ourl_rdmpage:peacrab
-# egon@spenglr.com
-# s_allannz@yahoo.com
-# dollar10boy@hotmail.com
 
-# LaTeX accents replacement
-latex_accents = {
-    "à": "\\`a",  # Grave accent
-    "è": "\\`e",
-    "ì": "\\`{\\i}",
-    "ò": "\\`o",
-    "ù": "\\`u",
-    "ỳ": "\\`y",
-    "À": "\\`A",
-    "È": "\\`E",
-    "Ì": "\\`{\\I}",
-    "Ò": "\\`O",
-    "Ù": "\\`U",
-    "Ỳ": "\\`Y",
-    "á": "\\'a",  # Acute accent
-    "ć": "\\'c",
-    "é": "\\'e",
-    "í": "\\'{\\i}",
-    "ó": "\\'o",
-    "ú": "\\'u",
-    "ý": "\\'y",
-    "Á": "\\'A",
-    "É": "\\'E",
-    "Í": "\\'{\\I}",
-    "Ó": "\\'O",
-    "Ú": "\\'U",
-    "Ý": "\\'Y",
-    "â": "\\^a",  # Circumflex
-    "ê": "\\^e",
-    "î": "\\^{\\i}",
-    "ô": "\\^o",
-    "û": "\\^u",
-    "ŷ": "\\^y",
-    "Â": "\\^A",
-    "Ê": "\\^E",
-    "Î": "\\^{\\I}",
-    "Ô": "\\^O",
-    "Û": "\\^U",
-    "Ŷ": "\\^Y",
-    "ä": "\\\"a",  # Umlaut or dieresis
-    "ë": "\\\"e",
-    "ï": "\\\"{\\i}",
-    "ö": "\\\"o",
-    "ü": "\\\"u",
-    "ÿ": "\\\"y",
-    "Ä": "\\\"A",
-    "Ë": "\\\"E",
-    "Ï": "\\\"{\\I}",
-    "Ö": "\\\"O",
-    "Ü": "\\\"U",
-    "Ÿ": "\\\"Y",
-    "ã": "\\~{a}",  # Tilde
-    "ñ": "\\~{n}",
-    "ă": "\\u{a}",  # Breve
-    "ĕ": "\\u{e}",
-    "ŏ": "\\u{o}",
-    "š": "\\v{s}",  # Caron
-    "č": "\\v{c}",
-    "ç": "\\c{c}",  # Cedilla
-    "Ç": "\\c{C}",
-    "œ": "{\\oe}",  # Ligatures
-    "Œ": "{\\OE}",
-    "æ": "{\\ae}",
-    "Æ": "{\\AE}",
-    "å": "{\\aa}",
-    "Å": "{\\AA}",
-    "–": "--",  # Dashes
-    "—": "---",
-    "−": "--",
-    "ø": "{\\o}",  # Misc latin-1 letters
-    "Ø": "{\\O}",
-    "ß": "{\\ss}",
-    "¡": "{!`}",
-    "¿": "{?`}",
-    "\\": "\\\\",  # Characters that should be quoted
-    "~": "\\~",
-    "&": "\\&",
-    "$": "\\$",
-    "{": "\\{",
-    "}": "\\}",
-    "%": "\\%",
-    "#": "\\#",
-    "_": "\\_",
-    "≥": "$\\ge$",  # Math operators
-    "≤": "$\\le$",
-    "≠": "$\\neq$",
-    "©": "\copyright",  # Misc
-    "ı": "{\\i}",
-    "α": "$\\alpha$",
-    "β": "$\\beta$",
-    "γ": "$\\gamma$",
-    "δ": "$\\delta$",
-    "ε": "$\\epsilon$",
-    "η": "$\\eta$",
-    "θ": "$\\theta$",
-    "λ": "$\\lambda$",
-    "µ": "$\\mu$",
-    "ν": "$\\nu$",
-    "π": "$\\pi$",
-    "σ": "$\\sigma$",
-    "τ": "$\\tau$",
-    "φ": "$\\phi$",
-    "χ": "$\\chi$",
-    "ψ": "$\\psi$",
-    "ω": "$\\omega$",
-    "°": "$\\deg$",
-    "‘": "`",  # Quotes
-    "’": "'",
-    "′": "$^\\prime$",
-    "“": "``",
-    "”": "''",
-    "‚": ",",
-    "„": ",,",
-    "\xa0": " ",     # Unprintable characters
-}
-
-def collapse_whitespace(s):
-    """Removes whitespace from string and returns the result. Useful
-    when whitespace causes errors (e.g. Bibtex)
-
-    :param s: string
-    :type s: str
-    """
-    logger.debug("Removing whitespace...")
-    return s.replace(" ","")
 
 def crossref_data_to_papis_data(data):
+    new_data = dict()
+    if "journal-title" in data.keys():
+        new_data["journal"] = data["journal-title"]
+    if "year" in data.keys():
+        new_data["year"] = data["year"]
+    if "page" in data.keys():
+        new_data["page"] = data["page"]
+    if "volume" in data.keys():
+        new_data["volume"] = data["volume"]
     if "author" in data.keys():
         authors = []
         for author in data["author"]:
@@ -168,42 +35,36 @@ def crossref_data_to_papis_data(data):
                 authors.append(
                     dict(given_name=author["given"], surname=author["family"])
                 )
-        data["author_list"] = authors
-        data["author"] = ",".join(
+        new_data["author_list"] = authors
+        new_data["author"] = ",".join(
             ["{a[given_name]} {a[surname]}".format(a=a) for a in authors]
         )
     if 'title' in data.keys():
-        data["title"] = " ".join(data['title'])
+        new_data["title"] = " ".join(data['title'])
+    if 'doi' in data.keys():
+        new_data["doi"] = data["DOI"]
     if 'DOI' in data.keys():
-        data["doi"] = data["DOI"]
-        del data["DOI"]
+        new_data["doi"] = data["DOI"]
+    if 'url' in data.keys():
+        new_data["url"] = data["url"]
     if 'URL' in data.keys():
-        data["url"] = data["URL"]
-        del data["URL"]
-    return data
+        new_data["url"] = data["URL"]
+    return new_data
 
 
-def get_data(query="", author="", year="", title="", max_results=20):
+def get_data(query="", author="", title="", max_results=20):
     import habanero
     cr = habanero.Crossref()
-    results = cr.works(
-        query=query,
-        limit=max_results,
-        query_author=author,
-        #TODO: really figure out how to include year
-        query_bibliographic=str(year),
-        #filter={'from-pub-date': '{}-1-1'.format(year) if year else ''},
-        #sort='published',
-        query_title=title
+    data = dict(
+        query=query, query_author=author,
+        query_title=title, limit=max_results
     )
+    kwargs = {key: data[key] for key in data.keys() if data[key]}
+    results = cr.works(sort='relevance', **kwargs)
+    logger.debug("Retrieved {} documents".format(len(results)))
     return [
         crossref_data_to_papis_data(d) for d in results["message"]["items"]
     ]
-
-
-def replace_latex_accents(string):
-    s = unicodedata.normalize('NFC', string)
-    return "".join([latex_accents[c] if c in latex_accents else c for c in s])
 
 
 def validate_doi(doi):
@@ -388,7 +249,9 @@ def get_cross_ref(doi):
     res.update(get_citation_info_from_results(record))
 
     # REFERENCE BUILDING
-    res['ref'] = collapse_whitespace(papis.utils.format_doc(papis.config.get("ref-format"), res))
+    res['ref'] = papis.utils.format_doc(
+        papis.config.get("ref-format"), res
+    ).replace(" ", "")
 
     # Check if reference field with the same tag already exists
     documents = papis.api.get_documents_in_lib(
@@ -427,32 +290,6 @@ def get_clean_doi(doi):
     :doi: String containing a doi
     :returns: The pure doi
 
-    >>> get_clean_doi('http://dx.doi.org/10.1063%2F1.881498')
-    '10.1063/1.881498'
-    >>> get_clean_doi('http://dx.doi.org/10.1063/1.881498')
-    '10.1063/1.881498'
-    >>> get_clean_doi('10.1063%2F1.881498')
-    '10.1063/1.881498'
-    >>> get_clean_doi('10.1063/1.881498')
-    '10.1063/1.881498'
-    >>> get_clean_doi(\
-            'http://physicstoday.scitation.org/doi/10.1063/1.uniau12/abstract'\
-        )
-    '10.1063/1.uniau12'
-    >>> get_clean_doi(\
-            'http://scitation.org/doi/10.1063/1.uniau12/abstract?as=234' \
-        )
-    '10.1063/1.uniau12'
-    >>> get_clean_doi('http://physicstoday.scitation.org/doi/10.1063/1.881498')
-    '10.1063/1.881498'
-    >>> get_clean_doi(\
-            'https://doi.org/10.1093/analys/anw053' \
-        )
-    '10.1093/analys/anw053'
-    >>> get_clean_doi(\
-            'http://physicstoday.scitation.org/doi/10.1063/1.881498?asdfwer' \
-        )
-    '10.1063/1.881498'
     """
     mdoi = re.match(
         r'^([^?/&%$^]+)(/|%2F)([^?&%$^]+).*',

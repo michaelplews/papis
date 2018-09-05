@@ -1,12 +1,21 @@
+"""
+
+Cli
+^^^
+.. click:: papis.commands.mv:cli
+    :prog: papis mv
+"""
 import papis
 import os
 import re
-import papis.api
 import papis.config
 import papis.utils
 import papis.database
 import subprocess
 import logging
+import papis.cli
+import papis.api
+import click
 
 
 def get_dirs(main):
@@ -24,7 +33,7 @@ def get_dirs(main):
 def run(document, new_folder_path, git=False):
     logger = logging.getLogger('mv:run')
     folder = document.get_main_folder()
-    cmd  = ['git', '-C', folder] if git else []
+    cmd = ['git', '-C', folder] if git else []
     cmd += ['mv', folder, new_folder_path]
     db = papis.database.get()
     logger.debug(cmd)
@@ -39,53 +48,49 @@ def run(document, new_folder_path, git=False):
     db.add(document)
 
 
-class Command(papis.commands.Command):
-    def init(self):
+@click.command()
+@click.help_option('--help', '-h')
+@papis.cli.query_option()
+@papis.cli.git_option()
+def cli(query, git):
+    """Move a document into some other path"""
+    # Leave this imports here for performance
+    import prompt_toolkit
+    import prompt_toolkit.completion
 
-        self.parser = self.get_subparsers().add_parser(
-            "mv",
-            help="Move entry"
-        )
+    logger = logging.getLogger('cli:mv')
 
-        self.add_search_argument()
-        self.add_git_argument()
+    documents = papis.database.get().query(query)
 
-    def main(self):
+    document = papis.api.pick_doc(documents)
+    if not document:
+        return 0
 
-        # Leave this imports here for performance
-        import prompt_toolkit
-        import prompt_toolkit.contrib.completers
+    lib_dir = os.path.expanduser(papis.config.get('dir'))
 
-        documents = self.get_db().query(self.args.search)
+    directories = get_dirs(lib_dir)
 
-        document = self.pick(documents)
-        if not document:
-            return 0
+    completer = prompt_toolkit.completion.WordCompleter(
+        directories
+    )
 
-        lib_dir = os.path.expanduser(papis.config.get('dir'))
-
-        directories = get_dirs(lib_dir)
-
-        completer = prompt_toolkit.contrib.completers.WordCompleter(
-            directories
-        )
-
-        try:
-            new_folder = os.path.join(
-                lib_dir,
-                prompt_toolkit.prompt(
-                    "Enter directory: (Tab completion enabled)\n"
-                    ">  ",
-                    completer=completer
-                )
+    try:
+        new_folder = os.path.join(
+            lib_dir,
+            prompt_toolkit.prompt(
+                "Enter directory: (Tab completion enabled)\n"
+                ">  ",
+                completer=completer,
+                complete_while_typing=True
             )
-        except:
-            return 0
+        )
+    except:
+        return 0
 
-        self.logger.info(new_folder)
+    logger.info(new_folder)
 
-        if not os.path.exists(new_folder):
-            self.logger.info("Creating path %s" % new_folder)
-            os.makedirs(new_folder, mode=papis.config.getint('dir-umask'))
+    if not os.path.exists(new_folder):
+        logger.info("Creating path %s" % new_folder)
+        os.makedirs(new_folder, mode=papis.config.getint('dir-umask'))
 
-        run(document, new_folder, git=self.args.git)
+    run(document, new_folder, git=git)

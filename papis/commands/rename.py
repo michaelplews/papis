@@ -1,9 +1,19 @@
+"""
+
+Cli
+^^^
+.. click:: papis.commands.rename:cli
+    :prog: papis rename
+"""
 import papis
 import os
 import papis.api
 import papis.utils
 import subprocess
 import logging
+import click
+import papis.cli
+import papis.database
 
 
 def run(document, new_name, git=False):
@@ -18,7 +28,7 @@ def run(document, new_name, git=False):
         logger.warning("Path %s already exists" % new_folder_path)
         return 1
 
-    cmd  = ['git', '-C', folder] if git else []
+    cmd = ['git', '-C', folder] if git else []
     cmd += ['mv', folder, new_folder_path]
 
     logger.debug(cmd)
@@ -34,28 +44,21 @@ def run(document, new_name, git=False):
     return 0
 
 
-class Command(papis.commands.Command):
-    def init(self):
+@click.command()
+@click.help_option('--help', '-h')
+@papis.cli.query_option()
+@papis.cli.git_option()
+def cli(query, git):
+    """Rename entry"""
 
-        self.parser = self.get_subparsers().add_parser(
-            "rename",
-            help="Rename entry"
-        )
+    documents = papis.database.get().query(query)
+    document = papis.api.pick_doc(documents)
+    if not document:
+        return 0
 
-        self.add_search_argument()
-        self.add_git_argument()
-
-    def main(self):
-
-        documents = self.get_db().query(self.args.search)
-
-        document = self.pick(documents)
-        if not document:
-            return 0
-
-        new_name = papis.utils.input(
-            "Enter new folder name:\n"
-            ">",
-            default=document.get_main_folder_name()
-        )
-        return run(document, new_name, git=self.args.git)
+    new_name = papis.utils.input(
+        "Enter new folder name:\n"
+        ">",
+        default=document.get_main_folder_name()
+    )
+    return run(document, new_name, git=git)
