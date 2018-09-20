@@ -20,6 +20,7 @@ for dep in main_dependencies:
         )
         sys.exit(1)
 
+import glob
 from setuptools import setup
 import papis
 
@@ -51,6 +52,7 @@ setup(
         "pyparser>=1.0",
         "pylibgen>=1.3.0",
         "habanero>=0.6.0",
+        "isbnlib>=3.9.1,<4.0.0",
     ],
     python_requires='>=3',
     classifiers=[
@@ -115,10 +117,7 @@ setup(
             # "scripts/shell_completion/build/bash/papis",
         # ]),
 
-        ("share/man/man1", [
-            "doc/build/man/papis.1",
-            "doc/build/man/papis-config.1",
-        ]),
+        ("share/man/man1", glob.glob("doc/build/man/*")),
 
         ("share/applications", [
             "contrib/papis.desktop",

@@ -21,6 +21,18 @@ Examples
 
         papis update --from-bibtex libraryfile.bib -i
 
+- Tag all einstein papers with the tag classics
+
+    .. code::
+
+        papis update --all --set tags classics einstein
+
+and add the tag of ``physics`` to all papers tagged as ``classics``
+
+    .. code::
+
+        papis update --all --set tags '{doc[tags]} physics' einstein
+
 Cli
 ^^^
 .. click:: papis.commands.update:cli
@@ -35,50 +47,20 @@ import papis.bibtex
 import papis.downloaders.utils
 import papis.document
 import papis.database
+import papis.isbnplus
 import papis.isbn
 import papis.crossref
 import papis.api
 import papis.cli
 import click
+import yaml
 
 
-def run(
-    document,
-    data=dict(),
-    interactive=False,
-    force=False,
-    from_yaml=False,
-    from_bibtex=False,
-    from_url=False,
-    from_doi=False
-        ):
-    logger = logging.getLogger('update:run')
-
-    if from_yaml:
-        import yaml
-        data.update(yaml.load(open(from_yaml)))
-
-    elif from_bibtex:
-        try:
-            bib_data = papis.bibtex.bibtex_to_dict(from_bibtex)
-            data.update(bib_data[0])
-        except Exception:
-            pass
-
-    elif from_url:
-        try:
-            url_data = papis.downloaders.utils.get(from_url)
-            data.update(url_data["data"])
-        except Exception:
-            pass
-
-    elif from_doi:
-        logger.debug("Try using doi %s" % from_doi)
-        data.update(papis.utils.doi_to_data(from_doi))
-
+def run(document, data=dict(), interactive=False, force=False):
     # Keep the ref the same, otherwise issues can be caused when
     # writing LaTeX documents and all the ref's change
     data['ref'] = document['ref']
+
     document.update(data, force, interactive)
     document.save()
     papis.database.get().update(document)
@@ -88,7 +70,7 @@ def run(
 @click.help_option('--help', '-h')
 @papis.cli.query_option()
 @click.option(
-    "-i",
+    "-i/-b",
     "--interactive/--no-interactive",
     help="Interactively update",
     default=True
@@ -101,14 +83,13 @@ def run(
     is_flag=True
 )
 @click.option(
-    "-d",
-    "--document",
-    help="Overwrite an existing document",
+    "--from-crossref",
+    help="Update info from crossref.org",
     default=None
 )
 @click.option(
-    "--from-crossref",
-    help="Update info from crossref.org",
+    "--from-isbn",
+    help="Update info from isbn",
     default=None
 )
 @click.option(
@@ -148,81 +129,63 @@ def run(
     default=False,
     is_flag=True
 )
+@click.option(
+    "-s", "--set",
+    help="Update document's information with key value."
+         "The value can be a papis format.",
+    multiple=True,
+    type=(str, str),
+)
 def cli(
         query,
         interactive,
         force,
-        document,
         from_crossref,
         from_isbnplus,
+        from_isbn,
         from_yaml,
         from_bibtex,
         from_url,
         from_doi,
         auto,
-        all
+        all,
+        set
         ):
     """Update a document from a given library"""
-    # TODO: Try to recycle some of this code with command add.
+
     documents = papis.database.get().query(query)
     data = dict()
     logger = logging.getLogger('cli:update')
 
-    if from_bibtex:
-        bib_data = papis.bibtex.bibtex_to_dict(from_bibtex)
-        # Then it means that the user wants to update all the information
-        # appearing in the bibtex file
-        if len(bib_data) > 1:
-            logger.warning(
-                'Your bibtex file contains more than one entry,'
-            )
-            logger.warning(
-                'It is supposed that you want to update all the'
-                'documents appearing inside the bibtex file.'
-            )
-            for bib_element in bib_data:
-                doc = papis.document.from_data(data)
-                located_doc = papis.utils.locate_document(doc, documents)
-                if located_doc is None:
-                    logger.error(
-                        "The following information could not be located"
-                    )
-                    logger.error('\n'+papis.document.dump(doc))
-                else:
-                    run(
-                        located_doc,
-                        data=bib_element,
-                        force=force,
-                        interactive=interactive
-                    )
-            logger.info('Exiting now')
-            return 0
-
-    # For the coming parts we need to pick a document
     if not all:
-        document = [papis.api.pick_doc(documents)]
-        if not document:
-            return 0
-    else:
-        document = documents
+        documents = [papis.api.pick_doc(documents)]
 
-    for docs in document:
+    for document in documents:
         if all:
             data = dict()
             from_url = None
             from_doi = None
             from_isbnplus = None
+            from_isbnplus = None
+
+        if set:
+            data.update(
+                {s[0]: papis.utils.format_doc(s[1], document) for s in set}
+            )
 
         if auto:
-            if 'doi' in docs.keys() and not from_doi:
-                logger.info('Trying using the doi {}'.format(docs['doi']))
-                from_doi = docs['doi']
-            if 'url' in docs.keys() and not from_url:
-                logger.info('Trying using the url {}'.format(docs['url']))
-                from_url = docs['url']
-            if 'title' in docs.keys() and not from_isbnplus:
-                logger.info('Trying using the title {}'.format(docs['title']))
-                from_isbnplus = docs['title']
+            if 'doi' in document.keys() and not from_doi:
+                logger.info('Trying using the doi {}'.format(document['doi']))
+                from_doi = document['doi']
+            if 'url' in document.keys() and not from_url:
+                logger.info('Trying using the url {}'.format(document['url']))
+                from_url = document['url']
+            if 'title' in document.keys() and not from_isbn:
+                logger.info(
+                    'Trying using the title {}'.format(document['title'])
+                )
+                from_isbn = '{d[title]} {d[author]}'.format(d=document)
+                from_isbnplus = from_isbn
             if from_crossref is None and from_doi is None:
                 from_crossref = True
 
@@ -234,13 +197,13 @@ def cli(
                         papis.document.from_data(d)
                         for d in papis.crossref.get_data(
                             query=from_crossref,
-                            author=docs['author'],
-                            title=docs['title']
+                            author=document['author'],
+                            title=document['title']
                         )
                 ])
                 if doc:
                     data.update(papis.document.to_dict(doc))
-                    if 'doi' in docs.keys() and not from_doi and auto:
+                    if 'doi' in document.keys() and not from_doi and auto:
                         from_doi = doc['doi']
 
             except Exception as e:
@@ -251,7 +214,7 @@ def cli(
                 doc = papis.api.pick_doc(
                     [
                         papis.document.from_data(d)
-                        for d in papis.isbn.get_data(
+                        for d in papis.isbnplus.get_data(
                             query=from_isbnplus
                         )
                     ]
@@ -261,13 +224,47 @@ def cli(
             except urllib.error.HTTPError:
                 logger.error('urllib failed to download')
 
+        if from_isbn:
+            try:
+                doc = papis.api.pick_doc(
+                    [
+                        papis.document.from_data(d)
+                        for d in papis.isbn.get_data(
+                            query=from_isbn
+                        )
+                    ]
+                )
+                if doc:
+                    data.update(papis.document.to_dict(doc))
+            except Exception as e:
+                logger.error('Isbnlib had an error retrieving information')
+                logger.error(e)
+
+        if from_yaml:
+            with open(from_yaml) as fd:
+                data.update(yaml.load(fd))
+
+        if from_doi:
+            logger.debug("Try using doi %s" % from_doi)
+            data.update(papis.utils.doi_to_data(from_doi))
+
+        if from_bibtex:
+            try:
+                bib_data = papis.bibtex.bibtex_to_dict(from_bibtex)
+                data.update(bib_data[0])
+            except Exception:
+                pass
+
+        if from_url:
+            try:
+                url_data = papis.downloaders.utils.get(from_url)
+                data.update(url_data["data"])
+            except Exception:
+                pass
+
         run(
-            docs,
+            document,
             data=data,
             interactive=interactive,
             force=force,
-            from_yaml=from_yaml,
-            from_bibtex=from_bibtex,
-            from_url=from_url,
-            from_doi=from_doi
         )

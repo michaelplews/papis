@@ -85,6 +85,7 @@ Cli
     :prog: papis explore
     :show-nested:
 """
+import os
 import papis.utils
 import papis.commands
 import papis.document
@@ -244,11 +245,11 @@ def isbnplus(ctx, query, author, title):
     papis explore isbnplus -q 'Albert einstein' pick cmd 'firefox {doc[url]}'
 
     """
-    import papis.isbn
+    from papis.isbnplus import get_data
     logger = logging.getLogger('explore:isbnplus')
     logger.info('Looking up...')
     try:
-        data = papis.isbn.get_data(
+        data = get_data(
             query=query,
             author=author,
             title=title
@@ -258,6 +259,37 @@ def isbnplus(ctx, query, author, title):
     docs = [papis.document.from_data(data=d) for d in data]
     ctx.obj['documents'] += docs
     logger.info('{} documents found'.format(len(docs)))
+
+
+@cli.command('isbn')
+@click.pass_context
+@click.help_option('--help', '-h')
+@click.option('--query', '-q', default=None)
+@click.option(
+    '--service',
+    '-s',
+    default='goob',
+    type=click.Choice(['wcat', 'goob', 'openl'])
+)
+def isbn(ctx, query, service):
+    """
+    Look for documents using isbnlib
+
+    Examples of its usage are
+
+    papis explore isbn -q 'Albert einstein' pick cmd 'firefox {doc[url]}'
+
+    """
+    from papis.isbn import get_data
+    logger = logging.getLogger('explore:isbn')
+    logger.info('Looking up...')
+    data = get_data(
+        query=query,
+        service=service,
+    )
+    docs = [papis.document.from_data(data=d) for d in data]
+    logger.info('{} documents found'.format(len(docs)))
+    ctx.obj['documents'] += docs
 
 
 @cli.command('dissemin')
@@ -282,10 +314,38 @@ def dissemin(ctx, query):
     logger.info('{} documents found'.format(len(docs)))
 
 
+@cli.command('lib')
+@click.pass_context
+@click.help_option('--help', '-h')
+@papis.cli.query_option()
+@click.option('--library', '-l', default=None, help='Papis library to look')
+def lib(ctx, query, library):
+    """
+    Query for documents in your library
+
+    Examples of its usage are
+
+        papis lib -l books einstein pick
+
+    """
+    logger = logging.getLogger('explore:lib')
+    db = papis.database.get(library=library)
+    docs = db.query(query)
+    logger.info('{} documents found'.format(len(docs)))
+    ctx.obj['documents'] = docs
+    assert(isinstance(ctx.obj['documents'], list))
+
+
 @cli.command('pick')
 @click.pass_context
 @click.help_option('--help', '-h')
-def pick(ctx):
+@click.option(
+    '--number', '-n',
+    type=int,
+    default=None,
+    help='Pick automatically the n-th document'
+)
+def pick(ctx, number):
     """
     Pick a document from the retrieved documents
 
@@ -295,6 +355,8 @@ def pick(ctx):
 
     """
     docs = ctx.obj['documents']
+    if number is not None:
+        docs = [docs[number - 1]]
     ctx.obj['documents'] = list(filter(
         lambda x: x is not None,
         [papis.api.pick_doc(docs)]
@@ -330,10 +392,22 @@ def bibtex(ctx, bibfile):
 @papis.cli.query_option()
 @click.help_option('--help', '-h')
 @click.option(
+    "--save", "-s",
+    is_flag=True,
+    default=False,
+    help="Store the citations in the document's folder for later use"
+)
+@click.option(
+    "--rmfile",
+    is_flag=True,
+    default=False,
+    help="Remove the stored citations file"
+)
+@click.option(
     "--max-citations", "-m", default=-1,
     help='Number of citations to be retrieved'
 )
-def citations(ctx, query, max_citations):
+def citations(ctx, query, max_citations, save, rmfile):
     """
     Query the citations of a paper
 
@@ -355,6 +429,17 @@ def citations(ctx, query, max_citations):
 
     doc = papis.api.pick_doc(documents)
     db = papis.database.get()
+    citations_file = os.path.join(doc.get_main_folder(), 'citations.yaml')
+
+    if os.path.exists(citations_file):
+        if rmfile:
+            logger.info('Removing {0}'.format(citations_file))
+            os.remove(citations_file)
+        else:
+            click.echo('A citations file exists in {0}'.format(citations_file))
+            if papis.utils.confirm('Do you want to use it?'):
+                yaml.callback(citations_file)
+                return
 
     if not doc.has('citations') or doc['citations'] == []:
         logger.warning('No citations found')
@@ -381,8 +466,18 @@ def citations(ctx, query, max_citations):
                 )
 
     docs = [papis.document.Document(data=d) for d in dois_with_data]
+    if save:
+        logger.info('Storing citations in "{0}"'.format(citations_file))
+        with open(citations_file, 'a+') as fd:
+            logger.info(
+                "Writing {} documents' yaml into {}".format(
+                    len(docs),
+                    citations_file
+                )
+            )
+            yamldata = papis.commands.export.run(docs, yaml=True)
+            fd.write(yamldata)
     ctx.obj['documents'] += docs
-
 
 
 @cli.command('yaml')
@@ -510,13 +605,16 @@ def cmd(ctx, command):
 
     Look for 200 Schroedinger papers, pick one, and add it via papis-scihub
 
-    papis explore crossref -m 200 -a 'Schrodinger' pick cmd 'papis scihub {doc[doi]}'
+    papis explore crossref -m 200 -a 'Schrodinger' \\
+        pick cmd 'papis scihub {doc[doi]}'
 
     """
     from subprocess import call
+    import shlex
     logger = logging.getLogger('explore:cmd')
     docs = ctx.obj['documents']
     for doc in docs:
         fcommand = papis.utils.format_doc(command, doc)
-        logger.info('Calling "%s"' % fcommand)
-        call(fcommand.split(" "))
+        splitted_command = shlex.split(fcommand)
+        logger.info('Calling %s' % splitted_command)
+        call(splitted_command)
